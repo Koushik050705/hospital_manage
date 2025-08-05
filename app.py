@@ -101,7 +101,7 @@ def generate_qr(data):
     return buf.getvalue()
 
 # ---------------------- PDF GENERATOR ----------------------
-def generate_prescription_pdf(patient_name, doctor_name, medicines, filename="prescription.pdf"):
+def generate_prescription_pdf(patient_name, doctor_name, medicines):
     buffer = BytesIO()
     p = canvas.Canvas(buffer, pagesize=A4)
     p.setFont("Helvetica-Bold", 16)
@@ -119,7 +119,7 @@ def generate_prescription_pdf(patient_name, doctor_name, medicines, filename="pr
     buffer.seek(0)
     return buffer
 
-def generate_invoice_pdf(patient_name, amount, details, filename="invoice.pdf"):
+def generate_invoice_pdf(patient_name, amount, details):
     buffer = BytesIO()
     p = canvas.Canvas(buffer, pagesize=A4)
     p.setFont("Helvetica-Bold", 16)
@@ -162,6 +162,7 @@ elif choice == "Login":
         if role:
             st.success(f"Welcome {username}! Role: {role}")
 
+            # ---------------- ADMIN ----------------
             if role == "Admin":
                 tabs = st.tabs(["Dashboard", "Manage Patients", "Appointments", "Billing"])
                 with tabs[0]:
@@ -191,7 +192,7 @@ elif choice == "Login":
                     st.subheader("📅 Add Appointment")
                     patients_df = get_patients()
                     patient_names = patients_df["name"].tolist()
-                    patient_choice = st.selectbox("Select Patient", patient_names)
+                    patient_choice = st.selectbox("Select Patient", patient_names, key="admin_patient_select")
                     doctor = st.text_input("Doctor Name")
                     date = st.date_input("Date")
                     if st.button("Book Appointment"):
@@ -204,7 +205,7 @@ elif choice == "Login":
                     st.subheader("💰 Billing")
                     patients_df = get_patients()
                     patient_names = patients_df["name"].tolist()
-                    patient_choice = st.selectbox("Select Patient", patient_names)
+                    patient_choice = st.selectbox("Select Patient", patient_names, key="admin_billing_patient_select")
                     amount = st.number_input("Amount", 0)
                     details = st.text_area("Details")
                     if st.button("Add Bill"):
@@ -213,21 +214,23 @@ elif choice == "Login":
                         st.success("Bill Added")
                     st.dataframe(get_bills())
 
+            # ---------------- DOCTOR ----------------
             elif role == "Doctor":
                 st.subheader("📝 Generate Prescription")
                 patients_df = get_patients()
                 patient_names = patients_df["name"].tolist()
-                patient_choice = st.selectbox("Select Patient", patient_names)
+                patient_choice = st.selectbox("Select Patient", patient_names, key="doctor_patient_select")
                 medicines = st.text_area("Medicines (one per line)")
                 if st.button("Generate Prescription PDF"):
                     pdf_buffer = generate_prescription_pdf(patient_choice, username, medicines)
                     st.download_button("📥 Download Prescription", data=pdf_buffer, file_name="prescription.pdf", mime="application/pdf")
 
+            # ---------------- RECEPTIONIST ----------------
             elif role == "Receptionist":
                 st.subheader("Book Appointments")
                 patients_df = get_patients()
                 patient_names = patients_df["name"].tolist()
-                patient_choice = st.selectbox("Select Patient", patient_names)
+                patient_choice = st.selectbox("Select Patient", patient_names, key="receptionist_patient_select")
                 doctor = st.text_input("Doctor Name")
                 date = st.date_input("Date")
                 if st.button("Book Appointment"):
@@ -236,6 +239,7 @@ elif choice == "Login":
                     st.success("Appointment Booked")
                 st.dataframe(get_appointments())
 
+            # ---------------- PATIENT ----------------
             elif role == "Patient":
                 st.subheader("My Bills & Prescriptions")
                 st.dataframe(get_bills())
