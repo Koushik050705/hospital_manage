@@ -11,12 +11,24 @@ from reportlab.lib.pagesizes import A4
 conn = sqlite3.connect("hospital.db")
 c = conn.cursor()
 
+def add_column_if_missing(table, column, col_type):
+    """Adds a column to an SQLite table if it does not already exist."""
+    c.execute(f"PRAGMA table_info({table})")
+    columns = [info[1] for info in c.fetchall()]
+    if column not in columns:
+        c.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+        conn.commit()
+        print(f"Added missing column '{column}' to '{table}' table.")
+
 def create_tables():
+    # Users table
     c.execute("""CREATE TABLE IF NOT EXISTS users (
                     username TEXT PRIMARY KEY,
                     password BLOB,
-                    role TEXT,
-                    specialization TEXT)""")
+                    role TEXT)""")
+    add_column_if_missing("users", "specialization", "TEXT")  # Auto add if missing
+
+    # Patients table
     c.execute("""CREATE TABLE IF NOT EXISTS patients (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT,
@@ -24,17 +36,22 @@ def create_tables():
                     gender TEXT,
                     phone TEXT,
                     address TEXT)""")
+
+    # Appointments table
     c.execute("""CREATE TABLE IF NOT EXISTS appointments (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     patient_id INTEGER,
                     doctor TEXT,
                     date TEXT,
                     status TEXT)""")
+
+    # Billing table
     c.execute("""CREATE TABLE IF NOT EXISTS billing (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     patient_id INTEGER,
                     items TEXT,
                     total REAL)""")
+
     conn.commit()
 
 create_tables()
@@ -208,7 +225,7 @@ elif choice == "Login":
                     patients_df = get_patients()
                     patient_names = patients_df["name"].tolist()
                     patient_choice = st.selectbox("Select Patient", patient_names, key="admin_billing_select")
-                    items = st.text_area("Services/Items (one per line)")
+                    items = st.text_area("Services/Items (one per line: name - ₹price)")
                     if items.strip():
                         total = sum([float(i.split("-")[-1].strip().replace("₹", "")) if "-" in i else 0 for i in items.split("\n")])
                     else:
