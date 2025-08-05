@@ -7,7 +7,7 @@ from io import BytesIO
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 
-# =================== DATABASE SETUP ===================
+# =================== DATABASE ===================
 conn = sqlite3.connect("hospital.db")
 c = conn.cursor()
 
@@ -18,7 +18,6 @@ def add_column_if_missing(table, column, col_type):
     if column not in columns:
         c.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
         conn.commit()
-        print(f"Added missing column '{column}' to '{table}' table.")
 
 def create_tables():
     # Users table
@@ -26,9 +25,9 @@ def create_tables():
                     username TEXT PRIMARY KEY,
                     password BLOB,
                     role TEXT)""")
-    add_column_if_missing("users", "specialization", "TEXT")  # Auto add if missing
+    add_column_if_missing("users", "specialization", "TEXT")
 
-    # Patients table
+    # Patients
     c.execute("""CREATE TABLE IF NOT EXISTS patients (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT,
@@ -37,7 +36,7 @@ def create_tables():
                     phone TEXT,
                     address TEXT)""")
 
-    # Appointments table
+    # Appointments
     c.execute("""CREATE TABLE IF NOT EXISTS appointments (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     patient_id INTEGER,
@@ -45,7 +44,7 @@ def create_tables():
                     date TEXT,
                     status TEXT)""")
 
-    # Billing table
+    # Billing
     c.execute("""CREATE TABLE IF NOT EXISTS billing (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     patient_id INTEGER,
@@ -56,7 +55,7 @@ def create_tables():
 
 create_tables()
 
-# =================== AUTH FUNCTIONS ===================
+# =================== AUTH ===================
 def hash_password(password):
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt())
 
@@ -73,48 +72,82 @@ def login_user(username, password):
     c.execute("SELECT password, role, specialization FROM users WHERE username = ?", (username,))
     result = c.fetchone()
     if result and check_password(password, result[0]):
-        return result[1], result[2]  # role, specialization
+        return result[1], result[2]
     return None, None
 
-# =================== PATIENT FUNCTIONS ===================
+# =================== PATIENT ===================
 def add_patient(name, age, gender, phone, address):
     c.execute("INSERT INTO patients (name, age, gender, phone, address) VALUES (?, ?, ?, ?, ?)",
               (name, age, gender, phone, address))
     conn.commit()
 
 def get_patients():
+    c.execute("""CREATE TABLE IF NOT EXISTS patients (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT,
+                    age INTEGER,
+                    gender TEXT,
+                    phone TEXT,
+                    address TEXT)""")
+    conn.commit()
     return pd.read_sql("SELECT * FROM patients", conn)
 
-# =================== APPOINTMENT FUNCTIONS ===================
+# =================== APPOINTMENT ===================
 def add_appointment(patient_id, doctor, date, status="Scheduled"):
     c.execute("INSERT INTO appointments (patient_id, doctor, date, status) VALUES (?, ?, ?, ?)",
               (patient_id, doctor, date, status))
     conn.commit()
 
 def get_appointments(doctor=None):
-    if doctor:
-        query = f"""SELECT a.id, p.name as patient, a.doctor, a.date, a.status
-                    FROM appointments a
-                    JOIN patients p ON a.patient_id = p.id
-                    WHERE a.doctor = '{doctor}'"""
-    else:
-        query = """SELECT a.id, p.name as patient, a.doctor, a.date, a.status
-                   FROM appointments a
-                   JOIN patients p ON a.patient_id = p.id"""
-    return pd.read_sql(query, conn)
+    c.execute("""CREATE TABLE IF NOT EXISTS appointments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    patient_id INTEGER,
+                    doctor TEXT,
+                    date TEXT,
+                    status TEXT)""")
+    conn.commit()
 
-# =================== BILLING FUNCTIONS ===================
+    if doctor:
+        query = f"""
+            SELECT a.id, p.name as patient, a.doctor, a.date, a.status
+            FROM appointments a
+            JOIN patients p ON a.patient_id = p.id
+            WHERE a.doctor = '{doctor}'
+        """
+    else:
+        query = """
+            SELECT a.id, p.name as patient, a.doctor, a.date, a.status
+            FROM appointments a
+            JOIN patients p ON a.patient_id = p.id
+        """
+    try:
+        return pd.read_sql(query, conn)
+    except:
+        return pd.DataFrame(columns=["id", "patient", "doctor", "date", "status"])
+
+# =================== BILLING ===================
 def add_bill(patient_id, items, total):
     c.execute("INSERT INTO billing (patient_id, items, total) VALUES (?, ?, ?)",
               (patient_id, items, total))
     conn.commit()
 
 def get_bills():
-    return pd.read_sql("""SELECT b.id, p.name as patient, b.items, b.total
-                          FROM billing b
-                          JOIN patients p ON b.patient_id = p.id""", conn)
+    c.execute("""CREATE TABLE IF NOT EXISTS billing (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    patient_id INTEGER,
+                    items TEXT,
+                    total REAL)""")
+    conn.commit()
+    try:
+        return pd.read_sql("""
+            SELECT b.id, p.name as patient, b.items, b.total
+            FROM billing b
+            JOIN patients p ON b.patient_id = p.id
+        """, conn)
+    except:
+        return pd.DataFrame(columns=["id", "patient", "items", "total"])
 
-# =================== PDF GENERATORS ===================
+# =================== PDF ===================
 def generate_invoice_pdf(patient_name, items, total):
     buffer = BytesIO()
     p = canvas.Canvas(buffer, pagesize=A4)
@@ -153,8 +186,8 @@ def generate_prescription_pdf(patient_name, doctor_name, specialization, medicin
     buffer.seek(0)
     return buffer
 
-# =================== STREAMLIT UI ===================
-st.set_page_config(page_title="Hospital Management System", layout="wide")
+# =================== STREAMLIT ===================
+st.set_page_config(page_title="🏥 Hospital Management System", layout="wide")
 st.title("🏥 Hospital Management System")
 
 menu = ["Login", "Register"]
@@ -181,7 +214,7 @@ elif choice == "Login":
         if role:
             st.success(f"Welcome {username}! Role: {role}")
 
-            # =================== ADMIN DASHBOARD ===================
+            # =================== ADMIN ===================
             if role == "Admin":
                 tabs = st.tabs(["Dashboard", "Patients", "Appointments", "Billing"])
                 with tabs[0]:
@@ -210,35 +243,35 @@ elif choice == "Login":
                 with tabs[2]:
                     st.subheader("Schedule Appointment")
                     patients_df = get_patients()
-                    patient_names = patients_df["name"].tolist()
-                    patient_choice = st.selectbox("Select Patient", patient_names, key="admin_patient_select")
-                    doctor = st.text_input("Doctor Name")
-                    date = st.date_input("Date")
-                    if st.button("Book Appointment"):
-                        pid = patients_df[patients_df["name"] == patient_choice]["id"].values[0]
-                        add_appointment(pid, doctor, str(date))
-                        st.success("Appointment Booked")
+                    if not patients_df.empty:
+                        patient_choice = st.selectbox("Select Patient", patients_df["name"].tolist(), key="admin_patient_select")
+                        doctor = st.text_input("Doctor Name")
+                        date = st.date_input("Date")
+                        if st.button("Book Appointment"):
+                            pid = patients_df[patients_df["name"] == patient_choice]["id"].values[0]
+                            add_appointment(pid, doctor, str(date))
+                            st.success("Appointment Booked")
                     st.dataframe(get_appointments())
 
                 with tabs[3]:
                     st.subheader("Billing System")
                     patients_df = get_patients()
-                    patient_names = patients_df["name"].tolist()
-                    patient_choice = st.selectbox("Select Patient", patient_names, key="admin_billing_select")
-                    items = st.text_area("Services/Items (one per line: name - ₹price)")
-                    if items.strip():
-                        total = sum([float(i.split("-")[-1].strip().replace("₹", "")) if "-" in i else 0 for i in items.split("\n")])
-                    else:
-                        total = 0
-                    st.write(f"**Total: ₹{total}**")
-                    if st.button("Generate Bill"):
-                        pid = patients_df[patients_df["name"] == patient_choice]["id"].values[0]
-                        add_bill(pid, items, total)
-                        pdf_buffer = generate_invoice_pdf(patient_choice, items, total)
-                        st.download_button("📥 Download Invoice", data=pdf_buffer, file_name="invoice.pdf", mime="application/pdf")
+                    if not patients_df.empty:
+                        patient_choice = st.selectbox("Select Patient", patients_df["name"].tolist(), key="admin_billing_select")
+                        items = st.text_area("Services/Items (name - ₹price)")
+                        if items.strip():
+                            total = sum([float(i.split("-")[-1].strip().replace("₹", "")) if "-" in i else 0 for i in items.split("\n")])
+                        else:
+                            total = 0
+                        st.write(f"**Total: ₹{total}**")
+                        if st.button("Generate Bill"):
+                            pid = patients_df[patients_df["name"] == patient_choice]["id"].values[0]
+                            add_bill(pid, items, total)
+                            pdf_buffer = generate_invoice_pdf(patient_choice, items, total)
+                            st.download_button("📥 Download Invoice", data=pdf_buffer, file_name="invoice.pdf", mime="application/pdf")
                     st.dataframe(get_bills())
 
-            # =================== DOCTOR DASHBOARD ===================
+            # =================== DOCTOR ===================
             elif role == "Doctor":
                 tabs = st.tabs(["My Appointments", "Prescriptions"])
                 with tabs[0]:
@@ -246,31 +279,30 @@ elif choice == "Login":
                     st.dataframe(get_appointments(username))
                 with tabs[1]:
                     patients_df = get_patients()
-                    patient_names = patients_df["name"].tolist()
-                    patient_choice = st.selectbox("Select Patient", patient_names, key="doctor_prescription_select")
-                    medicines = st.text_area("Medicines (one per line)")
-                    if st.button("Generate Prescription"):
-                        pdf_buffer = generate_prescription_pdf(patient_choice, username, specialization, medicines)
-                        st.download_button("📥 Download Prescription", data=pdf_buffer, file_name="prescription.pdf", mime="application/pdf")
+                    if not patients_df.empty:
+                        patient_choice = st.selectbox("Select Patient", patients_df["name"].tolist(), key="doctor_prescription_select")
+                        medicines = st.text_area("Medicines (one per line)")
+                        if st.button("Generate Prescription"):
+                            pdf_buffer = generate_prescription_pdf(patient_choice, username, specialization, medicines)
+                            st.download_button("📥 Download Prescription", data=pdf_buffer, file_name="prescription.pdf", mime="application/pdf")
 
-            # =================== RECEPTIONIST DASHBOARD ===================
+            # =================== RECEPTIONIST ===================
             elif role == "Receptionist":
                 st.subheader("Book Appointment")
                 patients_df = get_patients()
-                patient_names = patients_df["name"].tolist()
-                patient_choice = st.selectbox("Select Patient", patient_names, key="receptionist_patient_select")
-                doctor = st.text_input("Doctor Name")
-                date = st.date_input("Date")
-                if st.button("Book Appointment"):
-                    pid = patients_df[patients_df["name"] == patient_choice]["id"].values[0]
-                    add_appointment(pid, doctor, str(date))
-                    st.success("Appointment Booked")
+                if not patients_df.empty:
+                    patient_choice = st.selectbox("Select Patient", patients_df["name"].tolist(), key="receptionist_patient_select")
+                    doctor = st.text_input("Doctor Name")
+                    date = st.date_input("Date")
+                    if st.button("Book Appointment"):
+                        pid = patients_df[patients_df["name"] == patient_choice]["id"].values[0]
+                        add_appointment(pid, doctor, str(date))
+                        st.success("Appointment Booked")
                 st.dataframe(get_appointments())
 
-            # =================== PATIENT DASHBOARD ===================
+            # =================== PATIENT ===================
             elif role == "Patient":
                 st.subheader("My Bills")
                 st.dataframe(get_bills())
-
         else:
             st.error("Invalid Username or Password")
